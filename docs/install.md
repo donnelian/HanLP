@@ -58,20 +58,27 @@ HanLP requires Python 3.6 or later. GPU/TPU is suggested but not mandatory. Depe
 
 ````{margin} **Windows Support**
 ```{note}
-Installation on Windows is **perfectly** supported. The full version `hanlp[full]` additionally requires 
-[Microsoft Visual C++ Build Tools](http://go.microsoft.com/fwlink/?LinkId=691126) to compile C++ extensions. 
+Installation on Windows is **perfectly** supported. No need to install Microsoft Visual C++ Build Tools anymore. 
 ```
 ````
 
-| Flavor  | Description                                                  |
-| ------- | ------------------------------------------------------------ |
+````{margin} **Apple Silicon**
+```{note}
+HanLP also perfectly supports accelerating on Apple Silicon M1 chips, see [tutorial](https://www.hankcs.com/nlp/hanlp-official-m1-support.html).
+```
+````
+
+| Flavor  | Description                                                                                                                                                  |
+|---------|--------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | default | This installs the default version which delivers the most commonly used functionalities. However, some heavy dependencies like TensorFlow are not installed. |
-| full    | For experts who seek to maximize the efficiency via TensorFlow and C++ extensions, `pip install hanlp[full]` installs every dependency HanLP will use in production. `hanlp[full]` requires `Python<=3.8` due to `tensorflow==2.3.0`, which can be easily installed through conda: `conda install python=3.8 -y` |
+| tf      | This installs the TensorFlow and fastText.                                                                                                                   |
+| amr     | To support Abstract Meaning Representation (AMR) models, this installs AMR related dependencies like `penman`.                                               |
+| full    | For experts who seek to maximize the efficiency via TensorFlow and C++ extensions, `pip install hanlp[full]` installs all the above dependencies.            |
 
 
 ## Install Models
 
-In short, you don't need to manually install any model. Instead, they are automatically downloaded to a directory called `HANLP_HOME` when you call `hanlp.load`.
+In short, you don't need to manually install any model. Instead, they are automatically downloaded to a directory called [`HANLP_HOME`](https://hanlp.hankcs.com/docs/configure.html#customize-hanlp-home) when you call `hanlp.load`.
 Occasionally, some errors might occur the first time you load a model, in which case you can refer to the following tips.
 
 ### Download Error
@@ -84,16 +91,11 @@ If the auto-download fails, you can either:
 
 ### Server without Internet
 
-If your server has no Internet access at all, just debug your codes on your local PC and copy the following directories to your server via a USB disk.
+If your server has no Internet access at all, just debug your codes on your local PC and copy the following directories to your server via a USB disk or something.
 
 1. `~/.hanlp`: the home directory for HanLP models.
 1. `~/.cache/huggingface`: the home directory for Hugging Face 🤗 Transformers.
 
-````{margin} **Thirdparty Versions**
-```{danger}
-NEVER install TensorFlow/fastText by yourself, as higher or lower versions of TensorFlow have not been tested and might not work properly. 
-```
-````
 
 ### Import Error
 
@@ -103,4 +105,6 @@ Some TensorFlow/fastText models will ask you to install the missing TensorFlow/f
 pip install hanlp[full]
 ```
 
-
+```{danger}
+NEVER install thirdparty packages (TensorFlow/fastText etc.) by yourself, as higher or lower versions of thirparty packages have not been tested and might not work properly.
+```

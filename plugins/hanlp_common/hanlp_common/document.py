@@ -119,7 +119,7 @@ class Document(dict):
         dep = prefix_match(dep, self)
         sdp = prefix_match(sdp, self)
         results = CoNLLSentenceList()
-        if not self[tok]:
+        if not tok or not self[tok]:
             return results
         self = self._to_doc_without_spans(tok)
         flat = isinstance(self[tok][0], str)
@@ -203,7 +203,7 @@ class Document(dict):
                     if not start_offsets[b] or e > start_offsets[b][-1]:
                         start_offsets[b] = (ent, label, b, e)
                 ner_per_sample = [y for y in start_offsets if y]
-                header = ['Tok', 'NER', 'Type']
+                header = ['Token', 'NER', 'Type']
                 block = [[] for _ in range(length + 1)]
                 _ner = []
                 _type = []
@@ -229,7 +229,7 @@ class Document(dict):
                     if not pas:
                         continue
                     block = [[] for _ in range(length + 1)]
-                    header = ['Tok', 'SRL', f'PA{k + 1}']
+                    header = ['Token', 'SRL', f'PA{k + 1}']
                     _srl = []
                     _type = []
                     offset = 0
@@ -258,7 +258,7 @@ class Document(dict):
                     con_samples: List[Tree] = [con_samples]
                 tree = con_samples[i]
                 block = [[] for _ in range(length + 1)]
-                block[0].extend(('Tok', 'PoS'))
+                block[0].extend(('Token', 'PoS'))
                 for j, t in enumerate(tree.pos()):
                     block[j + 1].extend(t)
 
@@ -312,13 +312,12 @@ class Document(dict):
 
                 text = condense(block)
                 # Cosmetic issues
-                for row in text:
+                for row in text[1:]:
                     while '  ─' in row[1]:
                         row[1] = row[1].replace('  ─', ' ──')
-                    row[1] = row[1].replace('─  │', '───┤')
-                    row[1] = row[1].replace('─  ├', '───┼')
-                    row[1] = re.sub(r'►(\w+)(\s+)([│├])', lambda
-                        m: f'►{m.group(1)}{"─" * len(m.group(2))}{"┤" if m.group(3) == "│" else "┼"}', row[1])
+                    row[1] = row[1].replace('─ ─', '───')
+                    row[1] = re.sub(r'([►─])([\w-]*)(\s+)([│├])', lambda
+                        m: f'{m.group(1)}{m.group(2)}{"─" * len(m.group(3))}{"┤" if m.group(4) == "│" else "┼"}', row[1])
                     row[1] = re.sub(r'►(─+)►', r'─\1►', row[1])
                 for r, s in zip(extras, text):
                     r.extend(s)
@@ -385,7 +384,7 @@ class Document(dict):
         results = self.to_pretty(tok, lem, pos, dep, sdp, ner, srl, con, show_header, html=html)
         if isinstance(results, str):
             results = [results]
-        if IPYTHON:
+        if html and IPYTHON:
             from IPython.core.display import display, HTML
             display(HTML('<br>'.join(results)))
         else:

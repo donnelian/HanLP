@@ -16,7 +16,7 @@ from hanlp.common.vocab import Vocab
 from hanlp.components.srl.span_rank.inference_utils import srl_decode
 from hanlp.components.srl.span_rank.span_ranking_srl_model import SpanRankingSRLModel
 from hanlp.components.srl.span_rank.srl_eval_utils import compute_srl_f1
-from hanlp.datasets.srl.conll2012 import CoNLL2012SRLDataset, filter_v_args, unpack_srl, \
+from hanlp.datasets.srl.loaders.conll2012 import CoNLL2012SRLDataset, filter_v_args, unpack_srl, \
     group_pa_by_p
 from hanlp.layers.embeddings.embedding import Embedding
 from hanlp.metrics.f1 import F1
@@ -127,7 +127,10 @@ class SpanRankingSemanticRoleLabeler(TorchComponent):
             self.update_metrics(batch, output_dict, metric)
             loss = output_dict['loss']
             loss = loss.sum()  # For data parallel
-            loss.backward()
+            if torch.isnan(loss):  # w/ gold pred, some batches do not have PAs at all, resulting in empty scores
+                loss = torch.zeros((1,), device=loss.device)
+            else:
+                loss.backward()
             if gradient_accumulation and gradient_accumulation > 1:
                 loss /= gradient_accumulation
             if self.config.grad_norm:
@@ -224,14 +227,14 @@ class SpanRankingSemanticRoleLabeler(TorchComponent):
 
     # noinspection PyMethodOverriding
     def build_dataloader(self, data, batch_size, shuffle, device, logger: logging.Logger,
-                         generate_idx=False, **kwargs) -> DataLoader:
+                         generate_idx=False, transform=None, **kwargs) -> DataLoader:
         batch_max_tokens = self.config.batch_max_tokens
         gradient_accumulation = self.config.get('gradient_accumulation', 1)
         if batch_size:
             batch_size //= gradient_accumulation
         if batch_max_tokens:
             batch_max_tokens //= gradient_accumulation
-        dataset = self.build_dataset(data, generate_idx, logger)
+        dataset = self.build_dataset(data, generate_idx, logger, transform)
 
         sampler = SortingSampler([x['token_length'] for x in dataset],
                                  batch_size=batch_size,
@@ -340,6 +343,7 @@ class SpanRankingSemanticRoleLabeler(TorchComponent):
             grad_norm=5.0,
             gradient_accumulation=1,
             loss_reduction='sum',
+            transform=None,
             devices=None,
             logger=None,
             seed=None,
@@ -386,8 +390,10 @@ class SpanRankingSemanticRoleLabeler(TorchComponent):
             top_predicate_indices = output_dict['predicates'].tolist()
             top_spans = torch.stack([output_dict['arg_starts'], output_dict['arg_ends']], dim=-1).tolist()
             srl_mask = output_dict['srl_mask'].tolist()
+            srl_scores = output_dict['srl_scores']
+            pal_list = srl_scores.argmax(-1).tolist() if srl_scores.numel() else []
             for n, (pal, predicate_indices, argument_spans) in enumerate(
-                    zip(output_dict['srl_scores'].argmax(-1).tolist(), top_predicate_indices, top_spans)):
+                    zip(pal_list, top_predicate_indices, top_spans)):
                 srl_per_sentence = {}
                 for p, (al, predicate_index) in enumerate(zip(pal, predicate_indices)):
                     for a, (l, argument_span) in enumerate(zip(al, argument_spans)):

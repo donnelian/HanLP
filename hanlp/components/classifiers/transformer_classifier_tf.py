@@ -5,22 +5,21 @@
 import math
 from typing import Union, Tuple, Any, Iterable
 import tensorflow as tf
-from bert.tokenization.bert_tokenization import FullTokenizer
 from hanlp.common.keras_component import KerasComponent
 from hanlp_common.structure import SerializableDict
 from hanlp.layers.transformers.loader_tf import build_transformer
 from hanlp.optimizers.adamw import create_optimizer
-from hanlp.transform.table import TableTransform
+from hanlp.transform.table_tf import TableTransform
 from hanlp.utils.log_util import logger
 from hanlp_common.util import merge_locals_kwargs
-
+from transformers.tokenization_utils import PreTrainedTokenizer
 
 class TransformerTextTransform(TableTransform):
 
     def __init__(self, config: SerializableDict = None, map_x=False, map_y=True, x_columns=None,
                  y_column=-1, skip_header=True, delimiter='auto', multi_label=False, **kwargs) -> None:
         super().__init__(config, map_x, map_y, x_columns, y_column, multi_label, skip_header, delimiter, **kwargs)
-        self.tokenizer: FullTokenizer = None
+        self.tokenizer: PreTrainedTokenizer = None
 
     def inputs_to_samples(self, inputs, gold=False):
         tokenizer = self.tokenizer
@@ -50,11 +49,11 @@ class TransformerTextTransform(TableTransform):
             attention_mask = [1] * len(token_ids)
             diff = max_length - len(token_ids)
             if diff < 0:
-                logger.warning(
-                    f'Input tokens {tokens} exceed the max sequence length of {max_length - 2}. '
-                    f'The exceeded part will be truncated and ignored. '
-                    f'You are recommended to split your long text into several sentences within '
-                    f'{max_length - 2} tokens beforehand.')
+                # logger.warning(
+                #     f'Input tokens {tokens} exceed the max sequence length of {max_length - 2}. '
+                #     f'The exceeded part will be truncated and ignored. '
+                #     f'You are recommended to split your long text into several sentences within '
+                #     f'{max_length - 2} tokens beforehand.')
                 token_ids = token_ids[:max_length]
                 attention_mask = attention_mask[:max_length]
                 segment_ids = segment_ids[:max_length]

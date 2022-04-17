@@ -8,7 +8,7 @@ from torch import nn
 
 from hanlp.common.vocab import Vocab
 from hanlp.utils.init_util import embedding_uniform
-from hanlp.utils.io_util import load_word2vec, load_word2vec_as_vocab_tensor
+from hanlp.utils.torch_util import load_word2vec, load_word2vec_as_vocab_tensor
 
 
 def index_word2vec_with_vocab(filepath: str,
@@ -66,8 +66,12 @@ def index_word2vec_with_vocab(filepath: str,
     embedding = pret_matrix.index_select(0, ids)
     if normalize == 'norm':
         embedding /= (torch.norm(embedding, dim=1, keepdim=True) + 1e-12)
+    elif normalize == 'l2':
+        embedding = torch.nn.functional.normalize(embedding, p=2, dim=1)
     elif normalize == 'std':
         embedding /= torch.std(embedding)
+    else:
+        raise ValueError(f'Unsupported normalization method {normalize}')
     return embedding
 
 

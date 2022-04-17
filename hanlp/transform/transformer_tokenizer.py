@@ -315,20 +315,29 @@ class TransformerSequenceTokenizer(TransformerTokenizer):
                     for i, token in enumerate(input_tokens[1:-1] if add_special_tokens else input_tokens):
                         if input_str[subtoken_offsets[i][0]] == ' ':
                             subtoken_offsets[i] = (subtoken_offsets[i][0] + 1, subtoken_offsets[i][1])
-                if not input_ids:  # This chunk might be some control chars getting removed by tokenizer
-                    input_tokens = [input_str]
-                    input_ids = [tokenizer.unk_token_id]
-                    subtoken_offsets = [(0, len(input_str))]
+                if add_special_tokens:
+                    if len(input_tokens) == 2:  # bos and eos, meaning that the text contains only some spaces
+                        input_tokens.insert(1, input_str)
+                        input_ids.insert(1, tokenizer.unk_token_id)
+                        subtoken_offsets.append((0, len(input_str)))
+                else:
+                    if not input_ids:  # This chunk might be some control chars getting removed by tokenizer
+                        input_tokens = [input_str]
+                        input_ids = [tokenizer.unk_token_id]
+                        subtoken_offsets = [(0, len(input_str))]
                 return input_tokens, input_ids, subtoken_offsets
 
             if self.dict:
-                chunks = self.dict.split(input_tokens)
+                chunks = self.dict.split(sample.get(f'{self.input_key}_', input_tokens))  # Match original text directly
                 _input_tokens, _input_ids, _subtoken_offsets = [self.cls_token], [self.cls_token_id], []
                 _offset = 0
                 custom_words = sample['custom_words'] = []
+                char_offset = 0
                 for chunk in chunks:
-                    if isinstance(chunk, str):
+                    if isinstance(chunk, str):  # Use transformed text as it's what models are trained on
+                        chunk = input_tokens[char_offset:char_offset + len(chunk)]
                         tokens, ids, offsets = tokenize_str(chunk, add_special_tokens=False)
+                        char_offset += len(chunk)
                     else:
                         begin, end, label = chunk
                         # chunk offset is in char level
@@ -348,6 +357,7 @@ class TransformerSequenceTokenizer(TransformerTokenizer):
                             tokens, ids, offsets = tokenize_str(input_tokens[begin:end], add_special_tokens=False)
                             # offsets = [(offsets[0][0], offsets[-1][-1])]
                             custom_words.append((len(_input_ids) - 1, len(_input_ids) + len(ids) - 1, label))
+                        char_offset = end
                     _input_tokens.extend(tokens)
                     _input_ids.extend(ids)
                     _subtoken_offsets.extend((x[0] + _offset, x[1] + _offset) for x in offsets)
@@ -380,7 +390,7 @@ class TransformerSequenceTokenizer(TransformerTokenizer):
                     return_offsets_mapping = tokenizer.is_fast and self.ret_subtokens
                     encodings = tokenizer.batch_encode_plus(
                         input_tokens,
-                        return_offsets_mapping=return_offsets_mapping,
+                        return_offsets_mapping=return_offsets_mapping,  # Many tokenizers do not offer fast version
                         add_special_tokens=False
                     )
                     subtoken_ids_per_token = encodings.data['input_ids']
@@ -393,11 +403,12 @@ class TransformerSequenceTokenizer(TransformerTokenizer):
                                 del subtoken_ids[len(token):]
                             if not subtoken_ids:
                                 subtoken_ids = [tokenizer.unk_token_id]
-                            char_per_subtoken = -(-len(token) // len(subtoken_ids))
-                            bes = list(zip(range(0, len(token), char_per_subtoken),
-                                           range(char_per_subtoken, len(token) + char_per_subtoken, char_per_subtoken)))
-                            if bes[-1][-1] != len(token):
-                                bes[-1] = (bes[-1][0], len(token))
+                            # Since non-fast tok generates no mapping, we have to guess
+                            char_per_subtoken = max(len(token) // len(subtoken_ids), 1)
+                            bes = [(b, b + char_per_subtoken) for b in range(0, len(token), char_per_subtoken)]
+                            if len(bes) != len(subtoken_ids):
+                                bes[len(subtoken_ids) - 1] = (bes[len(subtoken_ids) - 1][0], len(token))
+                                del bes[len(subtoken_ids):]
                             offsets_mapping.append(bes)
                 else:
                     encodings = SerializableDict()

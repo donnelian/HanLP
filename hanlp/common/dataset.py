@@ -29,7 +29,7 @@ from torch.utils.data.dataset import IterableDataset
 
 class Transformable(ABC):
     def __init__(self, transform: Union[Callable, List] = None) -> None:
-        """An object which can be transformed with a list of functions. It can be treated as an objected being passed
+        """An object which can be transformed with a list of functions. It is the final result of an object being passed
         through a list of functions, while these functions are kept in a list.
 
         Args:
@@ -125,13 +125,13 @@ class TransformableDataset(Transformable, Dataset, ABC):
         super().__init__(transform)
         if generate_idx is None:
             generate_idx = isinstance(data, list)
-        data = self.load_data(data, generate_idx)
-        assert data, 'No samples loaded'
-        assert isinstance(data[0],
-                          dict), f'TransformDataset expects each sample to be a dict but got {type(data[0])} instead.'
-        self.data = data
+        data_ = self.load_data(data, generate_idx)
+        assert data_, f'No samples loaded from {data}'
+        assert isinstance(data_[0],
+                          dict), f'TransformDataset expects each sample to be a dict but got {type(data_[0])} instead.'
+        self.data = data_
         if cache:
-            self.cache = [None] * len(data)
+            self.cache = [None] * len(data_)
         else:
             self.cache = None
 
@@ -682,13 +682,17 @@ class KMeansSampler(BucketSampler):
 
 class SortingSampler(Sampler):
     # noinspection PyMissingConstructor
-    def __init__(self, lengths: List[int], batch_size=None, batch_max_tokens=None, shuffle=False) -> None:
-        """A sampler which sort samples according to their lengths. It takes a continuous chunk of sorted samples to
-        make a batch.
+    def __init__(self, lengths: List[int], batch_size=None, batch_max_tokens=None, use_effective_tokens=False,
+                 shuffle=False) -> None:
+        """A sampler which sorts samples according to their lengths. It takes a continuous chunk of sorted samples to
+        make a batch. The effective batch size is determined by ``batch_size``, ``batch_max_tokens`` and
+        ``use_effective_tokens``.
 
         Args:
             lengths: Lengths of each sample, usually measured by number of tokens.
             batch_max_tokens: Maximum tokens per batch.
+            use_effective_tokens: Whether to calculate the effective number of tokens after padding when applying the
+                ``batch_max_tokens``.
             batch_size: Maximum samples per batch.
             shuffle: ``True`` to shuffle batches and samples in a batch.
         """
@@ -701,10 +705,11 @@ class SortingSampler(Sampler):
         mini_batch = []
         for i in torch.argsort(torch.tensor(lengths), descending=True).tolist():
             # if batch_max_tokens:
-            if (batch_max_tokens is None or num_tokens + lengths[i] <= batch_max_tokens) and (
+            effective_tokens = lengths[i] if (not mini_batch or not use_effective_tokens) else lengths[mini_batch[0]]
+            if (batch_max_tokens is None or num_tokens + effective_tokens <= batch_max_tokens) and (
                     batch_size is None or len(mini_batch) < batch_size):
                 mini_batch.append(i)
-                num_tokens += lengths[i]
+                num_tokens += effective_tokens
             else:
                 if not mini_batch:  # this sequence is longer than  batch_max_tokens
                     mini_batch.append(i)
@@ -714,9 +719,10 @@ class SortingSampler(Sampler):
                 else:
                     self.batch_indices.append(mini_batch)
                     mini_batch = [i]
-                    num_tokens = lengths[i]
+                    num_tokens = effective_tokens
         if mini_batch:
             self.batch_indices.append(mini_batch)
+        # print(len(max(self.batch_indices, key=len)))
 
     def __iter__(self):
         if self.shuffle:
@@ -766,13 +772,15 @@ class SamplerBuilder(AutoConfigurable, ABC):
 
 class SortingSamplerBuilder(SortingSampler, SamplerBuilder):
     # noinspection PyMissingConstructor
-    def __init__(self, batch_size=None, batch_max_tokens=None) -> None:
+    def __init__(self, batch_size=None, batch_max_tokens=None, use_effective_tokens=False) -> None:
         """Builds a :class:`~hanlp.common.dataset.SortingSampler`.
 
         Args:
             batch_max_tokens: Maximum tokens per batch.
+            use_effective_tokens: Whether to calculate effective number of tokens when applying the `batch_max_tokens`.
             batch_size: Maximum samples per batch.
         """
+        self.use_effective_tokens = use_effective_tokens
         self.batch_max_tokens = batch_max_tokens
         self.batch_size = batch_size
 

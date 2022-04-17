@@ -174,9 +174,9 @@ class TorchComponent(Component, ABC):
         self.load_vocabs(save_dir)
         if verbose:
             flash('Building model [blink][yellow]...[/yellow][/blink]')
+        self.config.pop('training', None)  # Some legacy versions accidentally put training into config file
         self.model = self.build_model(
-            **merge_dict(self.config, training=False, **kwargs, overwrite=True, save_dir=save_dir,
-                         inplace=True))
+            **merge_dict(self.config, **kwargs, overwrite=True, inplace=True), training=False, save_dir=save_dir)
         if verbose:
             flash('')
         self.load_weights(save_dir, **kwargs)
@@ -224,7 +224,7 @@ class TorchComponent(Component, ABC):
         config = self._capture_config(locals())
         if not logger:
             logger = self.build_logger('train', save_dir)
-        if not seed:
+        if seed is None:
             self.config.seed = 233 if isdebugging() else int(time.time())
         set_seed(self.config.seed)
         logger.info(self._savable_config.to_json(sort=True))
@@ -601,13 +601,12 @@ class TorchComponent(Component, ABC):
 
     # noinspection PyMethodOverriding
     @abstractmethod
-    def predict(self, data: Union[str, List[str]], batch_size: int = None, **kwargs):
+    def predict(self, *args, **kwargs):
         """Predict on data fed by user. Users shall avoid directly call this method since it is not guarded with
         ``torch.no_grad`` and will introduces unnecessary gradient computation. Use ``__call__`` instead.
 
         Args:
-            data: Sentences or tokens.
-            batch_size: Decoding batch size.
+            *args: Sentences or tokens.
             **kwargs: Used in sub-classes.
         """
         pass
@@ -619,15 +618,12 @@ class TorchComponent(Component, ABC):
         return torch.zeros(16, 16, device=device)
 
     @torch.no_grad()
-    def __call__(self, data, batch_size=None, **kwargs):
+    def __call__(self, *args, **kwargs):
         """Predict on data fed by user. This method calls :meth:`~hanlp.common.torch_component.predict` but decorates
         it with ``torch.no_grad``.
 
         Args:
-            data: Sentences or tokens.
-            batch_size: Decoding batch size.
+            *args: Sentences or tokens.
             **kwargs: Used in sub-classes.
         """
-        return super().__call__(data, **merge_dict(self.config, overwrite=True,
-                                                   batch_size=batch_size or self.config.get('batch_size', None),
-                                                   **kwargs))
+        return super().__call__(*args, **merge_dict(self.config, overwrite=True, **kwargs))

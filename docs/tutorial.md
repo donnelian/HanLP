@@ -23,6 +23,14 @@ production environments. In this tutorial, we'll walk through the APIs in HanLP 
 HanLP offers out-of-the-box RESTful API and native Python API which share very similar interfaces 
 while they are designed for different scenes.
 
+```{code-cell} ipython3
+:tags: [remove_cell]
+
+import hanlp_common.constant
+
+hanlp_common.constant.IPYTHON = False  # Avoid pretty_print prints html which doesn't play well with this theme
+```
+
 ## RESTful API
 
 RESTful API is an endpoint where you send your documents to then get the parsed annotations back. 
@@ -77,7 +85,7 @@ which offers visualization in any mono-width text environment.
 
 ````{margin} **Non-ASCII**
 ```{note}
-Non-ASCII text might screw in which case copying it into a `.tsv` editor will align it correctly. 
+Non-ASCII text might be skewed in terminals but in Jupyter Notebook it will align correctly. 
 You can also use our [live demo](https://hanlp.hankcs.com/).
 ```
 ````
@@ -93,6 +101,8 @@ doc.pretty_print()
 ```
 
 ## Native API
+
+### Multi-Task Learning
 
 If you want to run our models locally or you want to implement your own RESTful server, 
 you can [install the native API](https://hanlp.hankcs.com/docs/install.html#install-native-package) 
@@ -115,4 +125,10 @@ print(HanLP(['In 2021, HanLPv2.1 delivers state-of-the-art multilingual NLP tech
 ```
 
 Due to the fact that the service provider is very likely running a different model or having different settings, the
-RESTful and native results might be slightly different.
+RESTful and native results might be slightly different. 
+
+To process Chinese or Japanese, HanLP provides mono-lingual models in each language which significantly outperform the multi-lingual model. See [docs](https://hanlp.hankcs.com/docs/api/hanlp/pretrained/mtl.html) for the list of models.
+
+### Single-Task Learning
+
+HanLP also provides a full spectrum of single-task learning models for core NLP tasks including tagging and parsing. Please refer to the documentations of  [`pretrained`](https://hanlp.hankcs.com/docs/api/hanlp/pretrained/index.html) models for details.

@@ -1,11 +1,11 @@
 from typing import Dict
 
-from alnlp.modules.feedforward import FeedForward
-from alnlp.modules.time_distributed import TimeDistributed
+import hanlp.utils.torch_util
+from hanlp.layers.feedforward import FeedForward
+from hanlp.layers.time_distributed import TimeDistributed
 
 from .highway_variational_lstm import *
 import torch
-from alnlp.modules import util
 
 from ...parsers.biaffine.biaffine import Biaffine
 
@@ -164,7 +164,7 @@ class SpanRankingSRLDecoder(nn.Module):
         # if torch.cuda.is_available():
         flatted_span_indices = flatted_span_indices
         span_text_emb = flatted_context_emb.index_select(0, flatted_span_indices).view(num_spans, spans_width, -1)
-        span_indices_mask = util.lengths_to_mask(span_width, max_len=max_arg_width)
+        span_indices_mask = hanlp.utils.torch_util.lengths_to_mask(span_width, max_len=max_arg_width)
         # project context output to num head
         # head_scores = self.context_projective_layer.forward(flatted_context_emb)
         # get span attention
@@ -237,7 +237,7 @@ class SpanRankingSRLDecoder(nn.Module):
         flatten_emb = self.flatten_emb(emb)
         offset = (torch.arange(0, num_sentences, device=emb.device) * max_sent_length).unsqueeze(1)
         return torch.index_select(flatten_emb, 0, (indices + offset).view(-1)) \
-            .view(indices.size()[0], indices.size()[1], -1)
+            .view(indices.size()[0], indices.size()[1], emb.size(-1))
 
     def get_batch_topk(self, candidate_starts: torch.Tensor, candidate_ends, candidate_scores, topk_ratio, text_len,
                        max_sentence_length, sort_spans=False, enforce_non_crossing=True):
@@ -335,7 +335,7 @@ class SpanRankingSRLDecoder(nn.Module):
         flat_pair_emb = pair_emb.view(num_sentences * num_args * num_preds, pair_emb_size)
         # get unary scores
         flat_srl_scores = self.get_srl_unary_scores(flat_pair_emb)
-        srl_scores = flat_srl_scores.view(num_sentences, num_args, num_preds, -1)
+        srl_scores = flat_srl_scores.view(num_sentences, num_args, num_preds, flat_srl_scores.size(-1))
         if self.config.use_biaffine:
             srl_scores += self.biaffine(arg_emb, self.predicate_scale(pred_emb)).permute([0, 2, 3, 1])
         unsqueezed_arg_scores, unsqueezed_pred_scores = \
@@ -356,8 +356,8 @@ class SpanRankingSRLDecoder(nn.Module):
         max_num_arg = srl_scores.size()[1]
         max_num_pred = srl_scores.size()[2]
         # num_predicted_args, 1D tensor; max_num_arg: a int variable means the gold ans's max arg number
-        args_mask = util.lengths_to_mask(num_predicted_args, max_num_arg)
-        pred_mask = util.lengths_to_mask(num_predicted_preds, max_num_pred)
+        args_mask = hanlp.utils.torch_util.lengths_to_mask(num_predicted_args, max_num_arg)
+        pred_mask = hanlp.utils.torch_util.lengths_to_mask(num_predicted_preds, max_num_pred)
         srl_loss_mask = args_mask.unsqueeze(2) & pred_mask.unsqueeze(1)
         return srl_loss_mask
 
@@ -409,8 +409,8 @@ class SpanRankingSRLDecoder(nn.Module):
         candidate_pred_scores = candidate_pred_scores + torch.log(masks.to(torch.float).unsqueeze(2))
         candidate_pred_scores = candidate_pred_scores.squeeze(2)
         if self.use_gold_predicates is True:
-            predicates = gold_predicates[0]
-            num_preds = gold_predicates[1]
+            predicates = gold_predicates
+            num_preds = (gold_arg_labels > 0).sum(dim=-1)
             pred_scores = torch.zeros_like(predicates)
             top_pred_indices = predicates
         else:
@@ -452,7 +452,8 @@ class SpanRankingSRLDecoder(nn.Module):
             "pred_scores": pred_scores,
             "num_args": num_args,
             "num_preds": num_preds,
-            "arg_labels": torch.max(srl_scores, 1)[1],  # [num_sentences, num_args, num_preds]
+            # [num_sentences, num_args, num_preds] avoid max on empty tensor
+            # "arg_labels": torch.max(srl_scores, 1)[1] if srl_scores.numel() else srl_scores[:, :, :, 0],
             "srl_scores": srl_scores,
         })
         return predict_dict
@@ -472,7 +473,7 @@ class SpanRankingSRLModel(nn.Module):
         self.embed = embed
         # Initialize context layer
         self.context_layer = context_layer
-        context_layer_output_dim = context_layer.get_output_dim()
+        context_layer_output_dim = context_layer.get_output_dim() if context_layer else self.word_embedding_dim
         self.decoder = SpanRankingSRLDecoder(context_layer_output_dim, label_space_size, config)
 
     def forward(self,
@@ -483,9 +484,10 @@ class SpanRankingSRLModel(nn.Module):
 
         context_embeddings = self.embed(batch)
         context_embeddings = F.dropout(context_embeddings, self.lexical_dropout, self.training)
-        contextualized_embeddings = self.context_layer(context_embeddings, masks)
+        if self.context_layer:
+            context_embeddings = self.context_layer(context_embeddings, masks)
 
-        return self.decoder.decode(contextualized_embeddings, sent_lengths, masks, gold_arg_starts, gold_arg_ends,
+        return self.decoder.decode(context_embeddings, sent_lengths, masks, gold_arg_starts, gold_arg_ends,
                                    gold_arg_labels, gold_predicates)
 
     @staticmethod
@@ -494,7 +496,7 @@ class SpanRankingSRLModel(nn.Module):
         sent_lengths, gold_predicates, gold_arg_starts, gold_arg_ends, gold_arg_labels = [batch.get(k, None) for k in
                                                                                           keys]
         if mask is None:
-            mask = util.lengths_to_mask(sent_lengths)
+            mask = hanlp.utils.torch_util.lengths_to_mask(sent_lengths)
         # elif not training:
         #     sent_lengths = mask.sum(dim=1)
         return gold_arg_ends, gold_arg_labels, gold_arg_starts, gold_predicates, mask, sent_lengths

@@ -9,7 +9,7 @@ from hanlp_common.structure import SerializableDict
 from hanlp.common.transform_tf import Transform
 from hanlp.common.vocab_tf import VocabTF
 from hanlp.layers.transformers.utils_tf import convert_examples_to_features
-from hanlp.transform.tsv import TsvTaggingFormat
+from hanlp.transform.tsv_tf import TsvTaggingFormat
 
 
 class TransformerTransform(TsvTaggingFormat, Transform):
@@ -121,7 +121,8 @@ class TransformerTransform(TsvTaggingFormat, Transform):
                      **kwargs) -> Iterable:
         assert batch is not None, 'Need the batch to know actual length of Y'
         label_mask = batch[1]
-
+        if self.tag_vocab.pad_token:
+            Y[:, :, self.tag_vocab.pad_idx] = float('-inf')
         Y = tf.argmax(Y, axis=-1)
         Y = Y[label_mask > 0]
         tags = [self.tag_vocab.idx_to_token[tid] for tid in Y]

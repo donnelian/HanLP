@@ -19,23 +19,21 @@ import zipfile
 from contextlib import contextmanager
 from pathlib import Path
 from subprocess import Popen, PIPE
-from typing import Dict, Tuple, Optional, Union, List
+from typing import Tuple, Optional, Union, List
 from urllib.parse import urlparse
 from urllib.request import urlretrieve
 
-import numpy as np
-import torch
 from hanlp_downloader import Downloader
 from hanlp_downloader.log import DownloadCallback
 from pkg_resources import parse_version
 
 import hanlp
 from hanlp_common.constant import HANLP_URL, HANLP_VERBOSE
-from hanlp.utils.log_util import logger, flash, cprint, remove_color_tag
+from hanlp.utils.log_util import logger, cprint, remove_color_tag
 from hanlp.utils.string_util import split_long_sentence_into
 from hanlp.utils.time_util import now_filename, CountdownTimer
 from hanlp.version import __version__
-from hanlp_common.io import save_pickle, load_pickle, eprint
+from hanlp_common.io import eprint
 
 
 def load_jsonl(path, verbose=False):
@@ -90,29 +88,6 @@ def tempdir(name=None):
 
 def tempdir_human():
     return tempdir(now_filename())
-
-
-class NumpyEncoder(json.JSONEncoder):
-    def default(self, obj):
-        """Special json encoder for numpy types
-        See https://interviewbubble.com/typeerror-object-of-type-float32-is-not-json-serializable/
-
-        Args:
-            obj: Object to be json encoded.
-
-        Returns:
-            Json string.
-        """
-        if isinstance(obj, (np.int_, np.intc, np.intp, np.int8,
-                            np.int16, np.int32, np.int64, np.uint8,
-                            np.uint16, np.uint32, np.uint64)):
-            return int(obj)
-        elif isinstance(obj, (np.float_, np.float16, np.float32,
-                              np.float64)):
-            return float(obj)
-        elif isinstance(obj, (np.ndarray,)):  #### This is the fix
-            return obj.tolist()
-        return json.JSONEncoder.default(self, obj)
 
 
 def hanlp_home_default():
@@ -181,23 +156,33 @@ def download(url, save_path=None, save_dir=hanlp_home(), prefix=HANLP_URL, appen
         except BaseException as e:
             remove_file(tmp_path)
             url = url.split('#')[0]
-            if not windows():
-                hints_for_download = f'e.g. \nwget {url} -O {save_path}\n'
-            else:
-                hints_for_download = ' Use some decent downloading tools.\n'
-            if not url.startswith(HANLP_URL):
-                hints_for_download += 'For third party data, you may find it on our mirror site:\n' \
-                                      'https://od.hankcs.com/hanlp/data/\n'
-            installed_version, latest_version = check_outdated()
+            try:
+                installed_version, latest_version = check_outdated()
+            except:
+                installed_version, latest_version = None, None  # No Internet
             if installed_version != latest_version:
-                hints_for_download += f'Or upgrade to the latest version({latest_version}):\npip install -U hanlp'
-            message = f'Download failed due to [red]{repr(e)}[/red]. Please download it to {save_path} by yourself. ' \
-                      f'[yellow]{hints_for_download}[/yellow]'
+                # Always prompt user to upgrade whenever a new version is available
+                hints = f'[green]Please upgrade to the latest version ({latest_version}) with:[/green]' \
+                        f'\n\n\t[yellow]pip install -U hanlp[/yellow]\n'
+            else:  # Otherwise prompt user to re-try
+                hints = f'[green]Please re-try or download it to {save_path} by yourself '
+                if not windows():
+                    hints += f'with:[/green]\n\n\t[yellow]wget {url} -O {save_path}[/yellow]\n\n'
+                else:
+                    hints += 'using some decent downloading tools.[/green]\n'
+                if not url.startswith(HANLP_URL):
+                    hints += 'For third party data, you may find it on our mirror site:\n' \
+                             'https://od.hankcs.com/hanlp/data/\n'
+                hints += 'See also https://hanlp.hankcs.com/docs/install.html#install-models for instructions.'
+            message = f'Download failed due to [red]{repr(e)}[/red].\n' \
+                      f'{hints}'
             if verbose:
                 cprint(message)
             if hasattr(e, 'msg'):
                 e.msg += '\n' + remove_color_tag(message)
-            raise e
+            elif hasattr(e, 'args') and e.args and isinstance(e.args, tuple) and isinstance(e.args[0], str):
+                e.args = (e.args[0] + '\n' + remove_color_tag(message),) + e.args[1:]
+            raise e from None
         remove_file(save_path)
         os.rename(tmp_path, save_path)
     return save_path
@@ -205,7 +190,7 @@ def download(url, save_path=None, save_dir=hanlp_home(), prefix=HANLP_URL, appen
 
 def parse_url_path(url):
     parsed: urllib.parse.ParseResult = urlparse(url)
-    path = os.path.join(*parsed.path.strip('/').split('/'))
+    path = parsed.path.strip('/')
     return parsed.netloc, path
 
 
@@ -299,8 +284,8 @@ def get_resource(path: str, save_dir=hanlp_home(), extract=True, prefix=HANLP_UR
       save_dir: Where to store the resource (Default value = :meth:`hanlp.utils.io_util.hanlp_home`)
       extract: Whether to unzip it if it's a zip file (Default value = True)
       prefix: A prefix when matched with an URL (path), then that URL is considered to be official. For official
-        resources, they will not go to a folder called ``thirdparty`` under :const:`~hanlp_common.constants.IDX`.
-      append_location:  (Default value = True)
+        resources, they will not go to a folder called ``thirdparty`` under :const:`~hanlp_common.constants.HANLP_HOME`.
+      append_location: Whether to put unofficial files in a ``thirdparty`` folder.
       verbose: Whether to print log messages.
 
     Returns:
@@ -364,6 +349,17 @@ def get_resource(path: str, save_dir=hanlp_home(), extract=True, prefix=HANLP_UR
 
 
 def path_from_url(url, save_dir=hanlp_home(), prefix=HANLP_URL, append_location=True):
+    """Map a URL to a local path.
+
+    Args:
+        url: Remote URL.
+        save_dir: The root folder to save this file.
+        prefix: The prefix of official website. Any URLs starting with this prefix will be considered official.
+        append_location: Whether to put unofficial files in a ``thirdparty`` folder.
+
+    Returns:
+        The real path that this URL is mapped to.
+    """
     if not save_dir:
         save_dir = hanlp_home()
     domain, relative_path = parse_url_path(url)
@@ -426,73 +422,6 @@ def replace_ext(filepath, ext) -> str:
     """
     file_prefix, _ = os.path.splitext(filepath)
     return file_prefix + ext
-
-
-def load_word2vec(path, delimiter=' ', cache=True) -> Tuple[Dict[str, np.ndarray], int]:
-    realpath = get_resource(path)
-    binpath = replace_ext(realpath, '.pkl')
-    if cache:
-        try:
-            flash('Loading word2vec from cache [blink][yellow]...[/yellow][/blink]')
-            word2vec, dim = load_pickle(binpath)
-            flash('')
-            return word2vec, dim
-        except IOError:
-            pass
-
-    dim = None
-    word2vec = dict()
-    f = TimingFileIterator(realpath)
-    for idx, line in enumerate(f):
-        f.log('Loading word2vec from text file [blink][yellow]...[/yellow][/blink]')
-        line = line.rstrip().split(delimiter)
-        if len(line) > 2:
-            if dim is None:
-                dim = len(line)
-            else:
-                if len(line) != dim:
-                    logger.warning('{}#{} length mismatches with {}'.format(path, idx + 1, dim))
-                    continue
-            word, vec = line[0], line[1:]
-            word2vec[word] = np.array(vec, dtype=np.float32)
-    dim -= 1
-    if cache:
-        flash('Caching word2vec [blink][yellow]...[/yellow][/blink]')
-        save_pickle((word2vec, dim), binpath)
-        flash('')
-    return word2vec, dim
-
-
-def load_word2vec_as_vocab_tensor(path, delimiter=' ', cache=True) -> Tuple[Dict[str, int], torch.Tensor]:
-    realpath = get_resource(path)
-    vocab_path = replace_ext(realpath, '.vocab')
-    matrix_path = replace_ext(realpath, '.pt')
-    if cache:
-        try:
-            flash('Loading vocab and matrix from cache [blink][yellow]...[/yellow][/blink]')
-            vocab = load_pickle(vocab_path)
-            matrix = torch.load(matrix_path, map_location='cpu')
-            flash('')
-            return vocab, matrix
-        except IOError:
-            pass
-
-    word2vec, dim = load_word2vec(path, delimiter, cache)
-    vocab = dict((k, i) for i, k in enumerate(word2vec.keys()))
-    matrix = torch.Tensor(list(word2vec.values()))
-    if cache:
-        flash('Caching vocab and matrix [blink][yellow]...[/yellow][/blink]')
-        save_pickle(vocab, vocab_path)
-        torch.save(matrix, matrix_path)
-        flash('')
-    return vocab, matrix
-
-
-def save_word2vec(word2vec: dict, filepath, delimiter=' '):
-    with open(filepath, 'w', encoding='utf-8') as out:
-        for w, v in word2vec.items():
-            out.write(f'{w}{delimiter}')
-            out.write(f'{delimiter.join(str(x) for x in v)}\n')
 
 
 def read_tsv_as_sents(tsv_file_path, ignore_prefix=None, delimiter=None):
@@ -758,3 +687,21 @@ def get_latest_info_from_pypi(package='hanlp', repository_url='https://pypi.pyth
     url = repository_url % package
     response = urllib.request.urlopen(url).read()
     return parse_version(json.loads(response)['info']['version'])
+
+
+def check_version_conflicts(extras=None):
+    from pkg_resources import get_distribution, Requirement, WorkingSet, VersionConflict
+    pkg = get_distribution('hanlp')
+    if not extras:
+        extras = pkg.extras
+    if isinstance(extras, list):
+        extras = tuple(extras)
+    requirements: List[Requirement] = pkg.requires(extras=extras)
+    try:
+        WorkingSet().resolve(
+            requirements, extras=extras
+        )
+    except VersionConflict as e:
+        error = e.with_context('hanlp').report()
+        return error, extras
+    return None, extras

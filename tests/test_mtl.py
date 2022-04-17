@@ -22,6 +22,15 @@ class TestMultiTaskLearning(unittest.TestCase):
             ["研究", "生命"]
         ])
 
+    def test_mtl_empty_str(self):
+        mtl('')
+        mtl(' ')
+        mtl([''])
+        mtl([' '])
+        mtl(['', ' '])
+        mtl(['', ' ', 'good'])
+        mtl([[]], skip_tasks='tok*')
+
     def test_skip_tok(self):
         pre_tokenized_sents = [
             ["商品和服务", '一个', '词'],
@@ -29,6 +38,24 @@ class TestMultiTaskLearning(unittest.TestCase):
         ]
         doc: Document = mtl(pre_tokenized_sents, skip_tasks='tok*')
         self.assertSequenceEqual(doc['tok'], pre_tokenized_sents)
+
+    def test_sdp_as_the_first_task(self):
+        doc: Document = mtl(['人', '吃', '鱼'], tasks='sdp', skip_tasks='tok*')
+        self.assertDictEqual(
+            doc.to_dict(),
+            {
+                "sdp": [
+                    [(2, "Agt")],
+                    [(0, "Root")],
+                    [(2, "Pat")]
+                ],
+                "tok": [
+                    "人",
+                    "吃",
+                    "鱼"
+                ]
+            }
+        )
 
     def test_threading(self):
         num_proc = 8
@@ -47,8 +74,18 @@ class TestMultiTaskLearning(unittest.TestCase):
         self.assertSequenceEqual(mtl('͡', tasks='tok/fine')['tok/fine'], ['͡'])
 
     def test_space(self):
-        doc: Document = mtl('商品 和服务')
-        self.assertSequenceEqual(doc['tok/fine'], ["商品", "和", "服务"])
+        task = 'tok/fine'
+        doc: Document = mtl('商品 和服务', tasks=task)
+        self.assertSequenceEqual(doc[task], ["商品", "和", "服务"])
+        mtl[task].dict_combine = {('iPad', 'Pro'), '2个空格'}
+        self.assertSequenceEqual(mtl("如何评价iPad Pro ？iPad  Pro有2个空格", tasks=task)[task],
+                                 ['如何', '评价', 'iPad Pro', '？', 'iPad  Pro', '有', '2个空格'])
+
+    def test_transform(self):
+        task = 'tok/fine'
+        mtl[task].dict_force = {'用户ID'}
+        self.assertSequenceEqual(mtl("我的用户ID跟你的用户id不同", tasks=task)[task],
+                                 ['我', '的', '用户ID', '跟', '你', '的', '用户', 'id', '不同'])
 
 
 if __name__ == '__main__':

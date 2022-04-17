@@ -11,6 +11,20 @@ version = {}
 with open(join(this_dir, "hanlp", "version.py")) as fp:
     exec(fp.read(), version)
 
+extras_require = {
+    'amr': [
+        'penman==1.2.1',
+        'networkx>=2.5.1',
+        'perin-parser>=0.0.12',
+    ],
+    'tf': [
+        'fasttext-wheel==0.9.2',
+        'tensorflow==2.6.0',
+        'keras==2.6.0',
+    ]
+}
+extras_require['full'] = sum(extras_require.values(), [])
+
 setup(
     name='hanlp',
     version=version['__version__'],
@@ -24,10 +38,13 @@ setup(
     classifiers=[
         'Intended Audience :: Science/Research',
         'Intended Audience :: Developers',
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         'Operating System :: OS Independent',
         "License :: OSI Approved :: Apache Software License",
-        'Programming Language :: Python :: 3 :: Only',
+        'Programming Language :: Python :: 3.6',
+        'Programming Language :: Python :: 3.7',
+        'Programming Language :: Python :: 3.8',
+        'Programming Language :: Python :: 3.9',
         'Topic :: Scientific/Engineering :: Artificial Intelligence',
         "Topic :: Text Processing :: Linguistic"
     ],
@@ -37,25 +54,14 @@ setup(
     install_requires=[
         'termcolor',
         'pynvml',
-        'alnlp',
         'toposort==1.5',
         'transformers>=4.1.1',
-        'sentencepiece>=0.1.91'
         'torch>=1.6.0',
-        'hanlp-common>=0.0.9',
-        'hanlp-trie>=0.0.2',
+        'hanlp-common>=0.0.13',
+        'hanlp-trie>=0.0.4',
         'hanlp-downloader',
     ],
-    extras_require={
-        'full': [
-            'fasttext==0.9.1',
-            'tensorflow==2.3.0',
-            'bert-for-tf2==0.14.6',
-            'py-params==0.9.7',
-            'params-flow==0.8.2',
-            'penman==0.6.2',
-        ],
-    },
+    extras_require=extras_require,
     python_requires='>=3.6',
     # entry_points={
     #     'console_scripts': [

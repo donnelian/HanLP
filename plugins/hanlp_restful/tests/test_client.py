@@ -30,6 +30,35 @@ class TestClient(unittest.TestCase):
                 '2021年 HanLPv2.1为生产环境带来次世代最先进的多语种NLP技术。']
         doc = self.HanLP.parse(text, language='mul')
 
+    def test_tokenize(self):
+        print(self.HanLP.tokenize('商品和服务。阿婆主来到北京立方庭参观自然语义科技公司'))
+        print(self.HanLP.tokenize('商品和服务。阿婆主来到北京立方庭参观自然语义科技公司', coarse=True))
+        print(self.HanLP.tokenize(['商品和服务。', '当下雨天地面积水分外严重']))
+        print(self.HanLP.tokenize(
+            ['In 2021, HanLPv2.1 delivers state-of-the-art multilingual NLP techniques to production environment.',
+             '2021年、HanLPv2.1は次世代の最先端多言語NLP技術を本番環境に導入します。',
+             '2021年 HanLPv2.1为生产环境带来次世代最先进的多语种NLP技术。'], language='mul'))
+
+    def test_coreference_resolution(self):
+        print(self.HanLP.coreference_resolution('我姐送我她的猫。我很喜欢它。'))
+
+    def test_text_style_transfer(self):
+        print(self.HanLP.text_style_transfer('国家对中石油抱有很大的期望.', target_style='gov_doc'))
+        print(self.HanLP.text_style_transfer('打工人，打工魂，打工都是人上人', target_style='gov_doc'))
+        print(self.HanLP.text_style_transfer('我看到了窗户外面有白色的云和绿色的森林', target_style='modern_poetry'))
+
+    def test_abstract_meaning_representation(self):
+        print(self.HanLP.abstract_meaning_representation('男孩希望女孩相信他。'))
+        print(self.HanLP.abstract_meaning_representation('男孩希望女孩相信他。', visualization='dot'))
+        print(self.HanLP.abstract_meaning_representation('男孩希望女孩相信他。', visualization='svg'))
+        print(self.HanLP.abstract_meaning_representation(tokens=[['男孩', '希望', '女孩', '相信', '他', '。']]))
+        print(self.HanLP.abstract_meaning_representation('The boy wants the girl to believe him.', language='en'))
+
+    def test_keyphrase_extraction(self):
+        print(self.HanLP.keyphrase_extraction(
+            '自然语言处理是一门博大精深的学科，掌握理论才能发挥出HanLP的全部性能。 '
+            '《自然语言处理入门》是一本配套HanLP的NLP入门书，助你零起点上手自然语言处理。', topk=3))
+
 
 if __name__ == '__main__':
     unittest.main()

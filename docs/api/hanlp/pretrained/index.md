@@ -13,7 +13,10 @@ tok
 pos
 ner
 dep
+constituency
+srl
 sdp
+amr
 sts
 word2vec
 glove
